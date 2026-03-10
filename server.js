@@ -246,7 +246,6 @@ app.get("/market", async (_req, res) => {
     const url =
       `https://commodities-api.com/api/latest` +
       `?access_key=${apiKey}` +
-      `&base=USD` +
       `&symbols=GF,LCAT`;
 
     console.log("MARKET REQUEST:", url.replace(apiKey, "KEY"));
@@ -259,9 +258,16 @@ app.get("/market", async (_req, res) => {
     }
 
     const data = await response.json();
+    console.log("Commodities API response:", JSON.stringify(data, null, 2));
 
     if (!data.success) {
-      throw new Error(data?.error?.info || "Commodities API request failed");
+      console.error("Commodities API full error response:", JSON.stringify(data, null, 2));
+      throw new Error(
+        data?.error?.info ||
+        data?.error?.message ||
+        JSON.stringify(data?.error) ||
+        "Commodities API request failed"
+      );
     }
 
     const feeder = data.rates?.GF;
@@ -271,12 +277,12 @@ app.get("/market", async (_req, res) => {
       updatedAt: new Date().toISOString(),
       feederCattle: {
         label: "Feeder Cattle",
-        price: feeder ? Number(feeder).toFixed(2) : "N/A",
+        price: feeder != null ? Number(feeder).toFixed(2) : "N/A",
         change: "—",
       },
       liveCattle: {
         label: "Live Cattle",
-        price: live ? Number(live).toFixed(2) : "N/A",
+        price: live != null ? Number(live).toFixed(2) : "N/A",
         change: "—",
       },
       boxedBeef: {
@@ -285,7 +291,6 @@ app.get("/market", async (_req, res) => {
         change: "—",
       },
     });
-
   } catch (error) {
     console.error("Market API error:", error);
 
