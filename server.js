@@ -240,7 +240,10 @@ app.get("/market", async (_req, res) => {
     const apiKey = process.env.COMMODITIES_API_KEY;
 
     if (!apiKey) {
-      return res.status(500).json({ error: true, message: "Missing COMMODITIES_API_KEY" });
+      return res.status(500).json({
+        error: true,
+        message: "Missing COMMODITIES_API_KEY"
+      });
     }
 
     const url =
@@ -250,7 +253,7 @@ app.get("/market", async (_req, res) => {
     const response = await fetch(url);
     const data = await response.json();
 
-    console.log("Commodities API raw response:", data);
+    console.log("Commodities API response:", data);
 
     if (!response.ok || data.error) {
       return res.status(500).json({
@@ -260,7 +263,18 @@ app.get("/market", async (_req, res) => {
       });
     }
 
-    return res.json(data);
+    const rates = data.data?.rates || data.rates || {};
+
+    return res.json({
+      success: true,
+      base: data.data?.base || data.base || "USD",
+      date: data.data?.date || data.date || null,
+      cattle: {
+        feederCattle: rates.GF ?? null,
+        liveCattle: rates.LCAT ?? null
+      },
+      raw: data
+    });
   } catch (error) {
     console.error("Market route error:", error);
     return res.status(500).json({
@@ -269,47 +283,6 @@ app.get("/market", async (_req, res) => {
     });
   }
 });
-
-// ---------- Tools ----------
-
-const tools = [
-  {
-    type: "function",
-    function: {
-      name: "get_weather",
-      description:
-        "Get live weather, forecast, wind, precipitation, snow, and severe weather alerts for a ranch or location. Use this for weather questions and also for operational ranch questions where current weather affects herd, hay, calving, grazing, travel, mud, freeze risk, storm prep, or daily priorities.",
-      parameters: {
-        type: "object",
-        properties: {
-          location: {
-            type: "string",
-            description: "City, state, ZIP code, or ranch location.",
-          },
-        },
-        required: ["location"],
-      },
-    },
-  },
-  {
-    type: "function",
-    function: {
-      name: "web_search",
-      description:
-        "Search the live internet for current information such as market news, regulations, livestock news, hay prices, schedules, breaking events, or anything that may have changed recently.",
-      parameters: {
-        type: "object",
-        properties: {
-          query: {
-            type: "string",
-            description: "The search query to run on the internet.",
-          },
-        },
-        required: ["query"],
-      },
-    },
-  },
-];
 
 // ---------- Main Chat Endpoint ----------
 
