@@ -257,9 +257,9 @@ app.get("/market", async (_req, res) => {
 
     if (!response.ok || data.error) {
       return res.status(500).json({
+        success: false,
         error: true,
-        message: "Commodities API request failed",
-        details: data
+        message: data.message || "Commodities API request failed"
       });
     }
 
@@ -272,12 +272,12 @@ app.get("/market", async (_req, res) => {
       cattle: {
         feederCattle: rates.GF ?? null,
         liveCattle: rates.LCAT ?? null
-      },
-      raw: data
+      }
     });
   } catch (error) {
     console.error("Market route error:", error);
     return res.status(500).json({
+      success: false,
       error: true,
       message: error.message || "Unknown server error"
     });
