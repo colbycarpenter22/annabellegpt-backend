@@ -233,6 +233,66 @@ async function webSearch(query) {
   };
 }
 
+// ---------- Market ----------
+
+app.get("/market", async (_req, res) => {
+  try {
+    const apiKey = process.env.COMMODITIES_API_KEY;
+
+    if (!apiKey) {
+      throw new Error("Missing COMMODITIES_API_KEY");
+    }
+
+    const url =
+      `https://api.commoditiesapi.com/api/latest` +
+      `?access_key=${apiKey}` +
+      `&base=USD` +
+      `&symbols=GF,LCAT`;
+
+    const response = await fetch(url);
+
+    if (!response.ok) {
+      const text = await response.text();
+      throw new Error(`Commodities API error: ${text}`);
+    }
+
+    const data = await response.json();
+
+    if (!data.success) {
+      throw new Error(data?.error?.info || "Commodities API request failed");
+    }
+
+    const feeder = data.rates?.GF;
+    const live = data.rates?.LCAT;
+
+    res.json({
+      updatedAt: new Date().toISOString(),
+      feederCattle: {
+        label: "Feeder Cattle",
+        price: feeder != null ? Number(feeder).toFixed(2) : "N/A",
+        change: "—",
+      },
+      liveCattle: {
+        label: "Live Cattle",
+        price: live != null ? Number(live).toFixed(2) : "N/A",
+        change: "—",
+      },
+      boxedBeef: {
+        label: "Boxed Beef",
+        price: "—",
+        change: "—",
+      },
+    });
+  } catch (error) {
+    console.error("Market API error:", error);
+
+    res.status(500).json({
+      error: true,
+      message: error.message || "Failed to load market data",
+    });
+  }
+});
+
 // ---------- Tools ----------
 
 const tools = [
@@ -410,11 +470,7 @@ Be clear, useful, practical, and plain spoken.`;
 
     const secondResponse = await openai.chat.completions.create({
       model,
-      messages: [
-        ...chatMessages,
-        assistantMessage,
-        ...toolResults,
-      ],
+      messages: [...chatMessages, assistantMessage, ...toolResults],
       temperature: 0.4,
     });
 
@@ -436,39 +492,6 @@ Be clear, useful, practical, and plain spoken.`;
 
 app.get("/", (_req, res) => {
   res.send("AnnabelleAI backend is running.");
-});
-
-app.get("/market", async (_req, res) => {
-  try {
-    // Starter placeholder values
-    // Replace later with real CME / USDA / market provider data
-    const marketData = {
-      updatedAt: new Date().toISOString(),
-      feederCattle: {
-        label: "Feeder Cattle",
-        price: "247.85",
-        change: "+2.15"
-      },
-      liveCattle: {
-        label: "Live Cattle",
-        price: "189.42",
-        change: "+1.08"
-      },
-      boxedBeef: {
-        label: "Boxed Beef Choice",
-        price: "312.40",
-        change: "-0.56"
-      }
-    };
-
-    res.json(marketData);
-  } catch (error) {
-    console.error("Market endpoint error:", error);
-    res.status(500).json({
-      error: true,
-      message: error.message || "Failed to load market data"
-    });
-  }
 });
 
 app.listen(PORT, () => {
