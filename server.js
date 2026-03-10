@@ -244,7 +244,7 @@ app.get("/market", async (_req, res) => {
     }
 
     const url =
-      `https://api.commodities-api.com/api/latest` +
+      `https://commodities-api.com/api/latest` +
       `?access_key=${apiKey}` +
       `&base=USD` +
       `&symbols=GF,LCAT`;
