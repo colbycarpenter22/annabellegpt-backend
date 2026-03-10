@@ -249,7 +249,7 @@ app.get("/market", async (_req, res) => {
       `&base=USD` +
       `&symbols=GF,LCAT`;
 
-    console.log("Market URL:", url.replace(apiKey, "HIDDEN_KEY"));
+    console.log("MARKET REQUEST:", url.replace(apiKey, "KEY"));
 
     const response = await fetch(url);
 
@@ -271,12 +271,12 @@ app.get("/market", async (_req, res) => {
       updatedAt: new Date().toISOString(),
       feederCattle: {
         label: "Feeder Cattle",
-        price: feeder != null ? Number(feeder).toFixed(2) : "N/A",
+        price: feeder ? Number(feeder).toFixed(2) : "N/A",
         change: "—",
       },
       liveCattle: {
         label: "Live Cattle",
-        price: live != null ? Number(live).toFixed(2) : "N/A",
+        price: live ? Number(live).toFixed(2) : "N/A",
         change: "—",
       },
       boxedBeef: {
@@ -285,6 +285,7 @@ app.get("/market", async (_req, res) => {
         change: "—",
       },
     });
+
   } catch (error) {
     console.error("Market API error:", error);
 
