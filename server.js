@@ -81,7 +81,7 @@ app.get("/market", async (_req, res) => {
 
 app.get("/weather", async (req, res) => {
   try {
-    const weatherApiKey = process.env.WEATHER_API_KEY;
+    const weatherApiKey = process.env.WEATHERAPI_API_KEY;
 
     if (!weatherApiKey) {
       return res.status(500).json({
