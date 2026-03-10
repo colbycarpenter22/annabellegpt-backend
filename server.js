@@ -438,6 +438,39 @@ app.get("/", (_req, res) => {
   res.send("AnnabelleAI backend is running.");
 });
 
+app.get("/market", async (_req, res) => {
+  try {
+    // Starter placeholder values
+    // Replace later with real CME / USDA / market provider data
+    const marketData = {
+      updatedAt: new Date().toISOString(),
+      feederCattle: {
+        label: "Feeder Cattle",
+        price: "247.85",
+        change: "+2.15"
+      },
+      liveCattle: {
+        label: "Live Cattle",
+        price: "189.42",
+        change: "+1.08"
+      },
+      boxedBeef: {
+        label: "Boxed Beef Choice",
+        price: "312.40",
+        change: "-0.56"
+      }
+    };
+
+    res.json(marketData);
+  } catch (error) {
+    console.error("Market endpoint error:", error);
+    res.status(500).json({
+      error: true,
+      message: error.message || "Failed to load market data"
+    });
+  }
+});
+
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
 });
