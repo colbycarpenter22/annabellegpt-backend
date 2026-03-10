@@ -77,6 +77,57 @@ app.get("/market", async (_req, res) => {
   }
 });
 
+// ---------- Weather ----------
+
+app.get("/weather", async (req, res) => {
+  try {
+    const weatherApiKey = process.env.WEATHER_API_KEY;
+
+    if (!weatherApiKey) {
+      return res.status(500).json({
+        success: false,
+        message: "Missing WEATHER_API_KEY"
+      });
+    }
+
+    const location = (req.query.location || "Jackson, WY").toString().trim();
+
+    const url = new URL("https://api.weatherapi.com/v1/current.json");
+    url.searchParams.set("key", weatherApiKey);
+    url.searchParams.set("q", location);
+    url.searchParams.set("aqi", "no");
+
+    const response = await fetch(url);
+    const data = await response.json();
+
+    console.log("Weather API response:", data);
+
+    if (!response.ok || data.error) {
+      return res.status(500).json({
+        success: false,
+        message: data?.error?.message || "Weather API request failed",
+        raw: data
+      });
+    }
+
+    return res.json({
+      success: true,
+      location: `${data.location?.name ?? location}${data.location?.region ? ", " + data.location.region : ""}`,
+      temperature: data.current?.temp_f ?? null,
+      condition: data.current?.condition?.text ?? "Unavailable",
+      wind: data.current?.wind_mph ?? null,
+      updatedAt: data.location?.localtime ?? ""
+    });
+  } catch (error) {
+    console.error("Weather route error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: error.message || "Unknown server error"
+    });
+  }
+});
+
 // ---------- Chat ----------
 
 app.post("/chat", async (req, res) => {
@@ -90,24 +141,19 @@ app.post("/chat", async (req, res) => {
       });
     }
 
-    const messages = Array.isArray(req.body?.messages) ? req.body.messages : null;
-    const prompt = typeof req.body?.prompt === "string" ? req.body.prompt.trim() : "";
+    const incomingMessages = Array.isArray(req.body?.messages) ? req.body.messages : [];
+    const systemPrompt =
+      typeof req.body?.systemPrompt === "string" && req.body.systemPrompt.trim().length > 0
+        ? req.body.systemPrompt.trim()
+        : "You are AnnabelleAI, a helpful ranch, cattle, hay, grazing, calving, and agriculture assistant. Be concise, practical, and useful.";
 
-    let finalMessages = messages;
-
-    if (!finalMessages || finalMessages.length === 0) {
-      finalMessages = [
-        {
-          role: "system",
-          content:
-            "You are AnnabelleAI, a helpful ranch, cattle, and agriculture assistant. Be concise, practical, and useful."
-        },
-        {
-          role: "user",
-          content: prompt || "Hello"
-        }
-      ];
-    }
+    const messages = [
+      { role: "system", content: systemPrompt },
+      ...incomingMessages.map((msg) => ({
+        role: msg.role,
+        content: msg.content
+      }))
+    ];
 
     const openAIResponse = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
@@ -116,8 +162,8 @@ app.post("/chat", async (req, res) => {
         Authorization: `Bearer ${openaiApiKey}`
       },
       body: JSON.stringify({
-        model: "gpt-4o-mini",
-        messages: finalMessages,
+        model: req.body?.model || "gpt-4o-mini",
+        messages,
         temperature: 0.7
       })
     });
