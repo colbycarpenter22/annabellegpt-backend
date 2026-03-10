@@ -240,63 +240,32 @@ app.get("/market", async (_req, res) => {
     const apiKey = process.env.COMMODITIES_API_KEY;
 
     if (!apiKey) {
-      throw new Error("Missing COMMODITIES_API_KEY");
+      return res.status(500).json({ error: true, message: "Missing COMMODITIES_API_KEY" });
     }
 
     const url =
       `https://commodities-api.com/api/latest` +
-      `?access_key=${apiKey}` +
-      `&symbols=GF,LCAT`;
-
-    console.log("MARKET REQUEST:", url.replace(apiKey, "KEY"));
+      `?access_key=${apiKey}&base=USD&symbols=GF,LCAT`;
 
     const response = await fetch(url);
-
-    if (!response.ok) {
-      const text = await response.text();
-      throw new Error(`Commodities API error: ${text}`);
-    }
-
     const data = await response.json();
-    console.log("Commodities API response:", JSON.stringify(data, null, 2));
 
-    if (!data.success) {
-      console.error("Commodities API full error response:", JSON.stringify(data, null, 2));
-      throw new Error(
-        data?.error?.info ||
-        data?.error?.message ||
-        JSON.stringify(data?.error) ||
-        "Commodities API request failed"
-      );
+    console.log("Commodities API raw response:", data);
+
+    if (!response.ok || data.error) {
+      return res.status(500).json({
+        error: true,
+        message: "Commodities API request failed",
+        details: data
+      });
     }
 
-    const feeder = data.rates?.GF;
-    const live = data.rates?.LCAT;
-
-    res.json({
-      updatedAt: new Date().toISOString(),
-      feederCattle: {
-        label: "Feeder Cattle",
-        price: feeder != null ? Number(feeder).toFixed(2) : "N/A",
-        change: "—",
-      },
-      liveCattle: {
-        label: "Live Cattle",
-        price: live != null ? Number(live).toFixed(2) : "N/A",
-        change: "—",
-      },
-      boxedBeef: {
-        label: "Boxed Beef",
-        price: "—",
-        change: "—",
-      },
-    });
+    return res.json(data);
   } catch (error) {
-    console.error("Market API error:", error);
-
-    res.status(500).json({
+    console.error("Market route error:", error);
+    return res.status(500).json({
       error: true,
-      message: error.message || "Failed to load market data",
+      message: error.message || "Unknown server error"
     });
   }
 });
