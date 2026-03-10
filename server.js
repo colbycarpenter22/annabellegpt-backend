@@ -249,6 +249,8 @@ app.get("/market", async (_req, res) => {
       `&base=USD` +
       `&symbols=GF,LCAT`;
 
+    console.log("Market URL:", url.replace(apiKey, "HIDDEN_KEY"));
+
     const response = await fetch(url);
 
     if (!response.ok) {
