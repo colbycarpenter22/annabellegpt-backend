@@ -68,8 +68,8 @@ async function fetchYahooQuote(symbol) {
 
 async function getMarketData() {
   const [feeder, live] = await Promise.all([
-    fetchYahooQuote("GF=F"), // Feeder Cattle futures
-    fetchYahooQuote("LE=F")  // Live Cattle futures
+    fetchYahooQuote("GF=F"),
+    fetchYahooQuote("LE=F")
   ]);
 
   const summary =
@@ -115,17 +115,63 @@ app.get("/market", async (_req, res) => {
 
 // ---------- Weather ----------
 
-async function getWeatherData(location = "Jackson, WY") {
+function buildPreparationNotes(day) {
+  const notes = [];
+
+  if ((day.totalprecip_in ?? 0) >= 0.5) {
+    notes.push("Prepare for wet ground, mud, and more difficult cattle movement.");
+  } else if ((day.totalprecip_in ?? 0) > 0.1) {
+    notes.push("Watch for light precipitation and slick conditions.");
+  }
+
+  if ((day.maxwind_mph ?? 0) >= 25) {
+    notes.push("Secure loose equipment, check panels and gates, and be ready for wind stress.");
+  } else if ((day.maxwind_mph ?? 0) >= 15) {
+    notes.push("Keep an eye on wind exposure and calf comfort.");
+  }
+
+  if ((day.mintemp_f ?? 999) <= 20) {
+    notes.push("Plan for cold stress, extra energy needs, and close observation on vulnerable calves.");
+  } else if ((day.mintemp_f ?? 999) <= 32) {
+    notes.push("Be ready for freezing conditions overnight.");
+  }
+
+  if ((day.maxtemp_f ?? 0) >= 90) {
+    notes.push("Plan for heat stress, shade, and strong water access.");
+  } else if ((day.maxtemp_f ?? 0) >= 80) {
+    notes.push("Monitor water, travel stress, and afternoon heat load.");
+  }
+
+  const conditionText = (day.condition?.text || "").toLowerCase();
+  if (conditionText.includes("snow")) {
+    notes.push("Be ready for snow impacts on feed access, travel, and newborn calves.");
+  }
+  if (conditionText.includes("storm") || conditionText.includes("thunder")) {
+    notes.push("Stay alert for storm movement and avoid stacking critical work into unstable weather windows.");
+  }
+
+  if (notes.length === 0) {
+    notes.push("Conditions look fairly manageable; keep normal checks on water, feed, and animal comfort.");
+  }
+
+  return notes;
+}
+
+async function getWeatherData(location = "Jackson, WY", days = 10) {
   const weatherApiKey = process.env.WEATHERAPI_API_KEY;
 
   if (!weatherApiKey) {
     throw new Error("Missing WEATHER_API_KEY");
   }
 
-  const url = new URL("https://api.weatherapi.com/v1/current.json");
+  const safeDays = Math.max(1, Math.min(Number(days) || 10, 10));
+
+  const url = new URL("https://api.weatherapi.com/v1/forecast.json");
   url.searchParams.set("key", weatherApiKey);
   url.searchParams.set("q", location);
+  url.searchParams.set("days", String(safeDays));
   url.searchParams.set("aqi", "no");
+  url.searchParams.set("alerts", "no");
 
   const response = await fetch(url);
   const data = await response.json();
@@ -134,20 +180,39 @@ async function getWeatherData(location = "Jackson, WY") {
     throw new Error(data?.error?.message || "Weather API request failed");
   }
 
+  const forecastDays = Array.isArray(data?.forecast?.forecastday)
+    ? data.forecast.forecastday.map((item) => ({
+        date: item?.date ?? "",
+        sunrise: item?.astro?.sunrise ?? "",
+        sunset: item?.astro?.sunset ?? "",
+        condition: item?.day?.condition?.text ?? "Unavailable",
+        maxTempF: item?.day?.maxtemp_f ?? null,
+        minTempF: item?.day?.mintemp_f ?? null,
+        avgTempF: item?.day?.avgtemp_f ?? null,
+        maxWindMPH: item?.day?.maxwind_mph ?? null,
+        totalPrecipIn: item?.day?.totalprecip_in ?? null,
+        chanceOfRain: item?.day?.daily_chance_of_rain ?? null,
+        chanceOfSnow: item?.day?.daily_chance_of_snow ?? null,
+        preparationNotes: buildPreparationNotes(item?.day ?? {})
+      }))
+    : [];
+
   return {
     success: true,
     location: `${data.location?.name ?? location}${data.location?.region ? ", " + data.location.region : ""}`,
     temperature: data.current?.temp_f ?? null,
     condition: data.current?.condition?.text ?? "Unavailable",
     wind: data.current?.wind_mph ?? null,
-    updatedAt: data.location?.localtime ?? ""
+    updatedAt: data.current?.last_updated ?? data.location?.localtime ?? "",
+    forecastDays
   };
 }
 
 app.get("/weather", async (req, res) => {
   try {
     const location = (req.query.location || "Jackson, WY").toString().trim();
-    const weather = await getWeatherData(location);
+    const days = req.query.days || 10;
+    const weather = await getWeatherData(location, days);
 
     return res.json(weather);
   } catch (error) {
@@ -186,16 +251,29 @@ app.post("/chat", async (req, res) => {
     let marketContext = "";
 
     try {
-      const weather = await getWeatherData(location);
+      const weather = await getWeatherData(location, 10);
 
       if (weather?.success) {
+        const forecastText = (weather.forecastDays || [])
+          .map((day, index) => {
+            const prep = Array.isArray(day.preparationNotes)
+              ? day.preparationNotes.join(" ")
+              : "";
+
+            return `${index + 1}. ${day.date}: ${day.condition}. High ${day.maxTempF}°F, low ${day.minTempF}°F, avg ${day.avgTempF}°F, max wind ${day.maxWindMPH} mph, precip ${day.totalPrecipIn} in, rain chance ${day.chanceOfRain}%, snow chance ${day.chanceOfSnow}%. Prep: ${prep}`;
+          })
+          .join("\n");
+
         weatherContext = `
 LIVE WEATHER DATA:
 Location: ${weather.location}
-Temperature: ${weather.temperature}°F
-Condition: ${weather.condition}
-Wind: ${weather.wind} mph
+Current temperature: ${weather.temperature}°F
+Current condition: ${weather.condition}
+Current wind: ${weather.wind} mph
 Updated at: ${weather.updatedAt}
+
+10-DAY FORECAST:
+${forecastText}
 `;
       }
     } catch (error) {
@@ -233,12 +311,13 @@ ${baseSystemPrompt}
 You are connected to live backend data.
 
 IMPORTANT RULES:
-1. If LIVE WEATHER DATA is included below and the user asks about weather, forecast, rain, snow, wind, temperature, cold, heat, storm, current conditions, or this week’s weather, answer using that weather data.
-2. Do not say you cannot access live or current weather data when LIVE WEATHER DATA is included below.
-3. If only current weather is available and the user asks for a full-week forecast, clearly say you have current live weather but not a full 7-day forecast in the current backend feed.
+1. If LIVE WEATHER DATA is included below and the user asks about weather, today, tomorrow, this week, next week, the next 10 days, forecast, rain, snow, wind, temperature, storms, cold, heat, or how to prepare, answer using that weather data.
+2. Do not say you cannot access live or forecast weather data when LIVE WEATHER DATA is included below.
+3. When forecast data is present, summarize the timing of the most important weather shifts and give practical ranch preparation advice.
 4. If the user asks about cattle markets, feeder cattle, live cattle, futures, or cattle prices, answer using LIVE CATTLE MARKET DATA below.
 5. Do not say you cannot access current cattle market data when LIVE CATTLE MARKET DATA is included below.
 6. Prefer backend-fed data over generic assumptions.
+7. Keep answers practical and ranch-oriented.
 
 ${weatherContext}
 
