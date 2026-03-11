@@ -38,8 +38,7 @@ app.get("/market", async (_req, res) => {
     }
 
     const url =
-      `https://commodities-api.com/api/latest` +
-      `?access_key=${apiKey}&base=USD&symbols=FC00,LC00`;
+      `https://commodities-api.com/api/latest?access_key=$x6nzjqla2hvkkl2lvk5lnk0suln263mtl877t2uin7lw3j2ko2rknus0nthf&base=USD&symbols=FC00,LC00`;
 
     const response = await fetch(url);
     const data = await response.json();
