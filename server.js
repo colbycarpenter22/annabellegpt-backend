@@ -26,57 +26,75 @@ app.get("/health", (_req, res) => {
 
 // ---------- Market ----------
 
+async function fetchYahooQuote(symbol) {
+  const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=1d&range=5d`;
+
+  const response = await fetch(url, {
+    headers: {
+      "User-Agent": "Mozilla/5.0"
+    }
+  });
+
+  if (!response.ok) {
+    throw new Error(`Yahoo request failed for ${symbol}: ${response.status}`);
+  }
+
+  const data = await response.json();
+  const result = data?.chart?.result?.[0];
+  const meta = result?.meta;
+
+  if (!meta) {
+    throw new Error(`No quote data returned for ${symbol}`);
+  }
+
+  const price = Number(meta.regularMarketPrice ?? 0);
+  const previousClose = Number(meta.previousClose ?? 0);
+  const change = price - previousClose;
+
+  return {
+    symbol,
+    price: Number(price.toFixed(2)),
+    previousClose: Number(previousClose.toFixed(2)),
+    change: Number(change.toFixed(2)),
+    currency: meta.currency ?? "USD",
+    exchangeName: meta.exchangeName ?? "",
+    marketState: meta.marketState ?? "",
+    updatedAt: meta.regularMarketTime
+      ? new Date(meta.regularMarketTime * 1000).toISOString()
+      : new Date().toISOString()
+  };
+}
+
 app.get("/market", async (_req, res) => {
   try {
-    const apiKey = process.env.COMMODITIES_API_KEY;
+    const [feeder, live] = await Promise.all([
+      fetchYahooQuote("GF=F"), // Feeder Cattle futures
+      fetchYahooQuote("LE=F")  // Live Cattle futures
+    ]);
 
-    if (!apiKey) {
-      return res.status(500).json({
-        success: false,
-        message: "Missing COMMODITIES_API_KEY"
-      });
-    }
-
-    const url =
-      `https://commodities-api.com/api/latest?access_key=$x6nzjqla2hvkkl2lvk5lnk0suln263mtl877t2uin7lw3j2ko2rknus0nthf&base=USD&symbols=FC00,LC00`;
-
-    const response = await fetch(url);
-    const data = await response.json();
-
-    console.log("Market API response:", JSON.stringify(data, null, 2));
-
-    if (!response.ok || data.error || data.success === false) {
-      return res.status(500).json({
-        success: false,
-        message: data.message || "Commodities API request failed",
-        raw: data
-      });
-    }
-
-    const rates = data.data?.rates || data.rates || {};
-    const base = data.data?.base || data.base || "USD";
-    const date = data.data?.date || data.date || null;
-    const unit = data.data?.unit || data.unit || null;
-
-    const feederRaw = rates.FC00 ?? null;
-    const liveRaw = rates.LC00 ?? null;
-
-    const feederCattle =
-      feederRaw !== null && feederRaw !== undefined ? Number(feederRaw) : null;
-
-    const liveCattle =
-      liveRaw !== null && liveRaw !== undefined ? Number(liveRaw) : null;
+    const summary =
+      live.change >= feeder.change
+        ? "Live cattle are leading today."
+        : "Feeder cattle are leading today.";
 
     return res.json({
       success: true,
-      base,
-      date,
-      unit,
+      summary,
+      feederCattle: feeder.price,
+      liveCattle: live.price,
+      feederSymbol: "GF=F",
+      liveSymbol: "LE=F",
+      feederChange: feeder.change,
+      liveChange: live.change,
+      updatedAt: new Date().toISOString(),
+      source: "Yahoo Finance delayed futures",
       cattle: {
-        feederCattle,
-        liveCattle,
-        feederSymbol: "FC00",
-        liveSymbol: "LC00"
+        feederCattle: feeder.price,
+        liveCattle: live.price,
+        feederSymbol: "GF=F",
+        liveSymbol: "LE=F",
+        feederChange: feeder.change,
+        liveChange: live.change
       }
     });
   } catch (error) {
@@ -88,6 +106,7 @@ app.get("/market", async (_req, res) => {
     });
   }
 });
+
 // ---------- Weather ----------
 
 app.get("/weather", async (req, res) => {
