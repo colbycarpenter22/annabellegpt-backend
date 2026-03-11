@@ -201,40 +201,100 @@ app.post("/chat", async (req, res) => {
       });
     }
 
-    const incomingMessages = Array.isArray(req.body?.messages) ? req.body.messages : [];
-    const latestUserMessage = getLastUserMessage(incomingMessages);
+    const incomingMessages = Array.isArray(req.body?.messages)
+      ? req.body.messages
+      : [];
 
-    let liveContext = "";
+    const location =
+      typeof req.body?.location === "string" && req.body.location.trim().length > 0
+        ? req.body.location.trim()
+        : "Jackson, WY";
 
-    if (messageNeedsMarket(latestUserMessage)) {
-      try {
-        const market = await getMarketData();
+    let weatherContext = "";
+    let marketContext = "";
+    let newsContext = "";
 
-        liveContext = `
-Live cattle market data from backend:
-- Feeder Cattle (${market.feederSymbol}): ${market.feederCattle}
-- Live Cattle (${market.liveSymbol}): ${market.liveCattle}
-- Feeder daily change: ${market.feederChange}
-- Live daily change: ${market.liveChange}
-- Summary: ${market.summary}
-- Updated at: ${market.updatedAt}
-- Source note: ${market.source}
+    // Always try to get live weather
+    try {
+      const weather = await getWeatherData(location);
 
-When this live data is present, use it directly and do not say you cannot access current market prices.
+      if (weather?.success) {
+        weatherContext = `
+LIVE WEATHER DATA (USE THIS IF USER ASKS ABOUT WEATHER):
+Location: ${weather.location}
+Temperature: ${weather.temperature}°F
+Condition: ${weather.condition}
+Wind: ${weather.wind} mph
+Updated at: ${weather.updatedAt}
 `;
-      } catch (marketError) {
-        console.error("Market context error:", marketError);
       }
+    } catch (error) {
+      console.error("Weather context error:", error);
+    }
+
+    // Always try to get live market
+    try {
+      const market = await getMarketData();
+
+      if (market?.success) {
+        marketContext = `
+LIVE CATTLE MARKET DATA (USE THIS IF USER ASKS ABOUT CATTLE PRICES OR MARKETS):
+Feeder Cattle (${market.feederSymbol}): ${market.feederCattle}
+Live Cattle (${market.liveSymbol}): ${market.liveCattle}
+Feeder daily change: ${market.feederChange}
+Live daily change: ${market.liveChange}
+Market summary: ${market.summary}
+Updated at: ${market.updatedAt}
+Source: ${market.source}
+`;
+      }
+    } catch (error) {
+      console.error("Market context error:", error);
+    }
+
+    // Optional: try ag news too
+    try {
+      const headlines = await fetchAgNews();
+
+      if (Array.isArray(headlines) && headlines.length > 0) {
+        newsContext = `
+CURRENT AGRICULTURE HEADLINES:
+${headlines
+  .slice(0, 5)
+  .map((item, index) => `${index + 1}. ${item.title} (${item.source})`)
+  .join("\n")}
+`;
+      }
+    } catch (error) {
+      console.error("Ag news context error:", error);
     }
 
     const baseSystemPrompt =
-      typeof req.body?.systemPrompt === "string" && req.body.systemPrompt.trim().length > 0
+      typeof req.body?.systemPrompt === "string" &&
+      req.body.systemPrompt.trim().length > 0
         ? req.body.systemPrompt.trim()
-        : "You are AnnabelleAI, a helpful ranch, cattle, hay, grazing, calving, and agriculture assistant. Be concise, practical, and useful.";
+        : "You are AnnabelleAI, a practical ranching AI assistant.";
 
-    const systemPrompt = `${baseSystemPrompt}
+    const systemPrompt = `
+${baseSystemPrompt}
 
-${liveContext}`.trim();
+You are connected to live backend data.
+
+IMPORTANT RULES:
+1. If LIVE WEATHER DATA is included below and the user asks about weather, forecast, rain, snow, wind, temperature, cold, heat, storm, or this week’s weather, you MUST answer using that weather data.
+2. Do NOT say you cannot access live weather data if LIVE WEATHER DATA is present below.
+3. If the user asks about cattle markets, feeder cattle, live cattle, futures, or cattle prices, use the LIVE CATTLE MARKET DATA below.
+4. Do NOT say you cannot access current market data if LIVE CATTLE MARKET DATA is present below.
+5. If exact forecast data for a full week is not available and only current weather is available, say that clearly. Example: "I have current live weather data for Jackson, but not a full 7-day forecast in the current backend feed."
+6. Prefer the backend-fed data over generic model assumptions.
+7. Never claim lack of access to live weather or market data when that data is included below.
+
+${weatherContext}
+
+${marketContext}
+
+${newsContext}
+`.trim();
 
     const messages = [
       { role: "system", content: systemPrompt },
@@ -253,7 +313,7 @@ ${liveContext}`.trim();
       body: JSON.stringify({
         model: req.body?.model || "gpt-4o-mini",
         messages,
-        temperature: 0.7
+        temperature: 0.2
       })
     });
 
@@ -284,8 +344,4 @@ ${liveContext}`.trim();
       message: error.message || "Unknown server error"
     });
   }
-});
-
-app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
 });
