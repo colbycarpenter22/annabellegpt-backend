@@ -31,7 +31,8 @@ async function fetchYahooQuote(symbol) {
 
   const response = await fetch(url, {
     headers: {
-      "User-Agent": "Mozilla/5.0"
+      "User-Agent": "Mozilla/5.0",
+      "Accept": "application/json"
     }
   });
 
@@ -65,38 +66,43 @@ async function fetchYahooQuote(symbol) {
   };
 }
 
-app.get("/market", async (_req, res) => {
-  try {
-    const [feeder, live] = await Promise.all([
-      fetchYahooQuote("GF=F"), // Feeder Cattle futures
-      fetchYahooQuote("LE=F")  // Live Cattle futures
-    ]);
+async function getMarketData() {
+  const [feeder, live] = await Promise.all([
+    fetchYahooQuote("GF=F"), // Feeder Cattle futures
+    fetchYahooQuote("LE=F")  // Live Cattle futures
+  ]);
 
-    const summary =
-      live.change >= feeder.change
-        ? "Live cattle are leading today."
-        : "Feeder cattle are leading today.";
+  const summary =
+    live.change >= feeder.change
+      ? "Live cattle are leading today."
+      : "Feeder cattle are leading today.";
 
-    return res.json({
-      success: true,
-      summary,
+  return {
+    success: true,
+    summary,
+    feederCattle: feeder.price,
+    liveCattle: live.price,
+    feederSymbol: "GF=F",
+    liveSymbol: "LE=F",
+    feederChange: feeder.change,
+    liveChange: live.change,
+    updatedAt: new Date().toISOString(),
+    source: "Yahoo Finance delayed futures",
+    cattle: {
       feederCattle: feeder.price,
       liveCattle: live.price,
       feederSymbol: "GF=F",
       liveSymbol: "LE=F",
       feederChange: feeder.change,
-      liveChange: live.change,
-      updatedAt: new Date().toISOString(),
-      source: "Yahoo Finance delayed futures",
-      cattle: {
-        feederCattle: feeder.price,
-        liveCattle: live.price,
-        feederSymbol: "GF=F",
-        liveSymbol: "LE=F",
-        feederChange: feeder.change,
-        liveChange: live.change
-      }
-    });
+      liveChange: live.change
+    }
+  };
+}
+
+app.get("/market", async (_req, res) => {
+  try {
+    const marketData = await getMarketData();
+    return res.json(marketData);
   } catch (error) {
     console.error("Market route error:", error);
 
@@ -158,6 +164,30 @@ app.get("/weather", async (req, res) => {
   }
 });
 
+// ---------- Chat Helpers ----------
+
+function getLastUserMessage(messages = []) {
+  const reversed = [...messages].reverse();
+  const lastUser = reversed.find((msg) => msg?.role === "user" && typeof msg?.content === "string");
+  return lastUser?.content || "";
+}
+
+function messageNeedsMarket(text = "") {
+  const t = text.toLowerCase();
+  return (
+    t.includes("cattle market") ||
+    t.includes("market price") ||
+    t.includes("market prices") ||
+    t.includes("cattle prices") ||
+    t.includes("feeder cattle") ||
+    t.includes("live cattle") ||
+    t.includes("cattle futures") ||
+    t.includes("futures") ||
+    t.includes("commodity") ||
+    t.includes("commodities")
+  );
+}
+
 // ---------- Chat ----------
 
 app.post("/chat", async (req, res) => {
@@ -172,10 +202,39 @@ app.post("/chat", async (req, res) => {
     }
 
     const incomingMessages = Array.isArray(req.body?.messages) ? req.body.messages : [];
-    const systemPrompt =
+    const latestUserMessage = getLastUserMessage(incomingMessages);
+
+    let liveContext = "";
+
+    if (messageNeedsMarket(latestUserMessage)) {
+      try {
+        const market = await getMarketData();
+
+        liveContext = `
+Live cattle market data from backend:
+- Feeder Cattle (${market.feederSymbol}): ${market.feederCattle}
+- Live Cattle (${market.liveSymbol}): ${market.liveCattle}
+- Feeder daily change: ${market.feederChange}
+- Live daily change: ${market.liveChange}
+- Summary: ${market.summary}
+- Updated at: ${market.updatedAt}
+- Source note: ${market.source}
+
+When this live data is present, use it directly and do not say you cannot access current market prices.
+`;
+      } catch (marketError) {
+        console.error("Market context error:", marketError);
+      }
+    }
+
+    const baseSystemPrompt =
       typeof req.body?.systemPrompt === "string" && req.body.systemPrompt.trim().length > 0
         ? req.body.systemPrompt.trim()
         : "You are AnnabelleAI, a helpful ranch, cattle, hay, grazing, calving, and agriculture assistant. Be concise, practical, and useful.";
+
+    const systemPrompt = `${baseSystemPrompt}
+
+${liveContext}`.trim();
 
     const messages = [
       { role: "system", content: systemPrompt },
