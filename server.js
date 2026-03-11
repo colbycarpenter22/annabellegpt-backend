@@ -39,14 +39,14 @@ app.get("/market", async (_req, res) => {
 
     const url =
       `https://commodities-api.com/api/latest` +
-      `?access_key=${apiKey}&base=USD&symbols=GF,LCAT`;
+      `?access_key=${apiKey}&base=USD&symbols=FC00,LC00`;
 
     const response = await fetch(url);
     const data = await response.json();
 
-    console.log("Market API response:", data);
+    console.log("Market API response:", JSON.stringify(data, null, 2));
 
-    if (!response.ok || data.error) {
+    if (!response.ok || data.error || data.success === false) {
       return res.status(500).json({
         success: false,
         message: data.message || "Commodities API request failed",
@@ -57,14 +57,27 @@ app.get("/market", async (_req, res) => {
     const rates = data.data?.rates || data.rates || {};
     const base = data.data?.base || data.base || "USD";
     const date = data.data?.date || data.date || null;
+    const unit = data.data?.unit || data.unit || null;
+
+    const feederRaw = rates.FC00 ?? null;
+    const liveRaw = rates.LC00 ?? null;
+
+    const feederCattle =
+      feederRaw !== null && feederRaw !== undefined ? Number(feederRaw) : null;
+
+    const liveCattle =
+      liveRaw !== null && liveRaw !== undefined ? Number(liveRaw) : null;
 
     return res.json({
       success: true,
       base,
       date,
+      unit,
       cattle: {
-        feederCattle: rates.GF ?? null,
-        liveCattle: rates.LCAT ?? null
+        feederCattle,
+        liveCattle,
+        feederSymbol: "FC00",
+        liveSymbol: "LC00"
       }
     });
   } catch (error) {
@@ -76,7 +89,6 @@ app.get("/market", async (_req, res) => {
     });
   }
 });
-
 // ---------- Weather ----------
 
 app.get("/weather", async (req, res) => {
