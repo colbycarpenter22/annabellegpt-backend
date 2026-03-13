@@ -26,6 +26,19 @@ app.get("/health", (_req, res) => {
 
 // ---------- Market ----------
 
+function formatMarketUpdatedAt(dateInput) {
+  const date = dateInput ? new Date(dateInput) : new Date();
+
+  return date.toLocaleString("en-US", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false
+  });
+}
+
 async function fetchYahooQuote(symbol) {
   const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=1d&range=5d`;
 
@@ -61,8 +74,8 @@ async function fetchYahooQuote(symbol) {
     exchangeName: meta.exchangeName ?? "",
     marketState: meta.marketState ?? "",
     updatedAt: meta.regularMarketTime
-      ? new Date(meta.regularMarketTime * 1000).toISOString()
-      : new Date().toISOString()
+      ? new Date(meta.regularMarketTime * 1000)
+      : new Date()
   };
 }
 
@@ -72,21 +85,18 @@ async function getMarketData() {
     fetchYahooQuote("LE=F")
   ]);
 
-  const summary =
-    live.change >= feeder.change
-      ? "Live cattle are leading today."
-      : "Feeder cattle are leading today.";
+  const latestUpdatedAt =
+    feeder.updatedAt > live.updatedAt ? feeder.updatedAt : live.updatedAt;
 
   return {
     success: true,
-    summary,
     feederCattle: feeder.price,
     liveCattle: live.price,
     feederSymbol: "GF=F",
     liveSymbol: "LE=F",
     feederChange: feeder.change,
     liveChange: live.change,
-    updatedAt: new Date().toISOString(),
+    updatedAt: formatMarketUpdatedAt(latestUpdatedAt),
     source: "Yahoo Finance delayed futures",
     cattle: {
       feederCattle: feeder.price,
